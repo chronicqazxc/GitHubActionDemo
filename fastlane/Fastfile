@@ -1,0 +1,69 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+default_platform(:ios)
+
+platform :ios do
+  desc 'ci_process'
+  lane :ci_process do
+    # Create Keychain for CI machine
+    setup_ci
+    build_appstore
+  end
+
+  desc 'Build appstore ipa'
+  lane :build_appstore do
+    # Download provisioning profiles & certificates
+    match(readonly: true,
+          type: 'appstore',
+          storage_mode: 'git',
+          git_url: 'git@github.com:chronicqazxc/certificates.git',
+          app_identifier: 'co.WayneHsiao.GithubActionDemo')
+
+    team_id = ENV['sigh_co.WayneHsiao.GithubActionDemo_appstore_team-id']
+
+    # Configue project setting
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: 'GithubActionDemo.xcodeproj',
+      team_id: team_id,
+      targets: 'GithubActionDemo',
+      code_sign_identity: get_code_sign_identity,
+      profile_name: ENV['sigh_co.WayneHsiao.GithubActionDemo_appstore_profile-name']
+    )
+
+    # Build ipa
+    gym
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV['APP_STORE_CONNECT_API_KEY_ID'],
+      issuer_id: ENV['APP_STORE_CONNECT_API_ISSUER_ID'],
+      key_content: ENV['APP_STORE_CONNECT_API_KEY']
+    )
+
+    puts api_key
+
+    pilot(
+      api_key: api_key,
+      skip_submission: true,
+      skip_waiting_for_build_processing: true
+    )
+  end
+
+  desc 'Get code sign identity'
+  private_lane :get_code_sign_identity do
+    sh("security find-identity -v -p codesigning | grep -o 'Apple Distribution: Yu Han Hsiao.*)' | tr -d '\n'")
+  end
+end
