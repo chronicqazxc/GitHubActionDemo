@@ -1,0 +1,91 @@
+# The name of your workflow and will displaied in the actions selection page.
+name: Packaging
+
+# Event that trigger the workflow.
+# workflow_dispatch means trigger the workflow manually.
+on:
+  workflow_dispatch:
+
+# A job consists of a sequence of steps. In addition to you can have one to many jobs, the jobs also can be ran parallel or sequentially.
+jobs:
+  # The name of the job.
+  build-production:
+    # The type of runner that the job will run on
+    runs-on: macos-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+        # The name of this action.
+      - name: 🌍 Check github repo
+        # The uses keyword tells the job to retrieve v2 of the community action named actions/checkout@v2.
+        # This action checks out and download your repository under the $GITHUB_WORKSPACE, allowing you to run actions against your code.
+        uses: actions/checkout@v2
+
+      - name: Dependency cache
+        # Use caching to store dependencies on GitHub to spped up the workflows.
+        # https://docs.github.com/en/free-pro-team@latest/actions/guides/caching-dependencies-to-speed-up-workflows
+        uses: actions/cache@v2
+        # A map of the input parameters defined by the action.
+        # https://github.com/actions/cache/blob/main/examples.md#ruby---bundler
+        with:
+          path: vendor/bundle
+          key: ${{ runner.os }}-gems-${{ hashFiles('**/Gemfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-gems-
+
+        # Install dependencies via Bundle.
+      - name: 🌍 Bundle environment
+        # Runs command-line programs using the operating system's shell.
+        run: bundle install --jobs 10
+
+        # Select specific Xcode which compile your app.
+      - name: 🛠 Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_12.app/Contents/Developer
+
+        # Configure SSH key
+        # https://github.com/hashicorp/terraform-github-actions/issues/39
+      - name: Setup SSH Keys and known_hosts for fastlane match
+        # Set environment variable.
+        # The ssh private key has permission to clone the repo which match stored the provisioning profiles and certificates.
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        # Copied from https://github.com/maddox/actions/blob/master/ssh/entrypoint.sh
+        # Setup SSH key in CI machine since match use SSH to clone encrypted provisioning profile and certificate from GitHub private repo.
+        run: |
+          SSH_PATH="$HOME/.ssh"
+          mkdir -p "$SSH_PATH"
+          touch "$SSH_PATH/known_hosts"
+          echo "$SSH_PRIVATE_KEY" > "$SSH_PATH/id_rsa"
+          chmod 700 "$SSH_PATH"
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          chmod 600 "$SSH_PATH/known_hosts"
+          chmod 600 "$SSH_PATH/id_rsa"
+          eval $(ssh-agent)
+          ssh-add "$SSH_PATH/id_rsa"
+
+        # Run the fastlane script.
+      - name: 🛠 Build product
+        run: bundle exec fastlane ci_process
+        # Setup the environment variable that will be used in fastlane script.
+        # MATCH_PASSWORD: Decrypt provisioning profile and certificate
+        # APP_STORE_CONNECT_API_KEY: AppStore Connect API Key
+        # APP_STORE_CONNECT_API_KEY_ID: AppStore Connect API Key Id
+        # APP_STORE_CONNECT_API_ISSUER_ID: AppStore Connect API issuer id
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+
+        # Find ipa and set to environment variable
+      - name: 🔎 Find build
+        run: |
+          filename=$(find . -type f -name "*.ipa" -exec basename {} \;)
+          echo "::set-env name=ARTIFACT::$filename"
+
+        # Upload ipa to GitHub action
+      - name: 📦 Upload build
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: ${{ env.ARTIFACT }}
