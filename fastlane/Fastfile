@@ -19,6 +19,11 @@ platform :ios do
   desc 'ci_process'
   lane :ci_process do
     # Create Keychain for CI machine
+    
+    sh('security list-keychains')
+    sh('security default-keychain')
+    sh('security find-identity -v -p codesigning')
+    
     setup_ci
     build_appstore
   end
@@ -31,6 +36,10 @@ platform :ios do
           storage_mode: 'git',
           git_url: 'git@github.com:chronicqazxc/certificates.git',
           app_identifier: 'co.WayneHsiao.GithubActionDemo')
+    
+    sh('security list-keychains')
+    sh('security default-keychain')
+    sh('security find-identity -v -p codesigning')
 
     team_id = ENV['sigh_co.WayneHsiao.GithubActionDemo_appstore_team-id']
 
